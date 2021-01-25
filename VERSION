@@ -1,0 +1,20 @@
+CCACHE_VERSION=3.7.12
+WEBRTC_VERSION=m89.4389{\#2}
+WEBRTC_SEMANTIC_VERSION=89.4389.2.0
+WEBRTC_COMMIT=464c9aeeb5dcccb2889ac2dadd2a740953ca98e6
+
+PACKAGE_NAMES= \
+  linux-arm \
+  linux-arm64 \
+  linux-x64 \
+  macos-x64 \
+  macos-arm64 \
+  macos-x86_64 \
+  ios \
+  android
+
+DOCKER_PACKAGE_NAMES= \
+  linux-arm \
+  linux-arm64 \
+  linux-x64 \
+  android
