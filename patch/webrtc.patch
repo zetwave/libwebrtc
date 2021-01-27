@@ -1,0 +1,331 @@
+diff --git a/src/rtc_base/BUILD.gn b/src/rtc_base/BUILD.gn
+index 4219c43..b7b4ffa 100234
+--- a/src/rtc_base/BUILD.gn	(date 1611141089000)
++++ b/src/rtc_base/BUILD.gn	(date 1611688389000)
+@@ -24,6 +24,35 @@
+     assert(rtc_ssl_root != "",
+            "You must specify rtc_ssl_root when rtc_build_ssl==0.")
+     include_dirs = [ rtc_ssl_root ]
++    libs = rtc_ssl_libs
++  }
++}
++
++if (!rtc_build_ffmpeg) {
++  config("external_ffmpeg_linking") {
++    if (is_win && !is_clang) {
++      ldflags = [
++        "/NODEFAULTLIB:LIBCMT",
++
++        # libavcodec.a(me_cmp.o) : warning LNK4078: multiple '.rodata' sections found with different attributes (60500020)
++        "/ignore:4078",
++      ]
++    }
++  }
++  config("external_ffmpeg_library") {
++    assert(rtc_ffmpeg_root != "",
++           "You must specify rtc_ffmpeg_root when rtc_build_ffmpeg==0.")
++    include_dirs = [ rtc_ffmpeg_root ]
++    libs = rtc_ffmpeg_libs
++  }
++}
++
++if (!rtc_build_opus) {
++  config("external_opus_library") {
++    assert(rtc_opus_root != "",
++           "You must specify rtc_opus_root when rtc_build_opus==0.")
++    include_dirs = [ rtc_opus_root ]
++    libs = rtc_opus_libs
+   }
+ }
+
+diff --git a/src/webrtc.gni b/src/webrtc.gni
+index 4219c43..b7b4ffa 100341
+--- a/src/webrtc.gni
++++ b/src/webrtc.gni
+@@ -36,6 +36,23 @@
+ }
+
+ declare_args() {
++  # Allow providing external ffmpeg
++  rtc_build_ffmpeg = true
++
++  # Used to specify an external ffmpeg include path when not compiling the
++  # library that comes with WebRTC (i.e. rtc_build_ffmpeg == 0).
++  rtc_ffmpeg_root = ""
++
++  # Used to specify an external ffmpeg libs.
++  rtc_ffmpeg_libs = []
++
++  # Used to specify and external opus include path when not compiling the
++  # library that comes with WebRTC (i.e. rtc_build_opus == 0).
++  rtc_opus_root = ""
++
++  # Used to specify an external opus libs.
++  rtc_opus_libs = []
++
+   # Setting this to true will make RTC_EXPORT (see rtc_base/system/rtc_export.h)
+   # expand to code that will manage symbols visibility.
+   rtc_enable_symbol_export = false
+@@ -85,6 +102,9 @@
+   # library that comes with WebRTC (i.e. rtc_build_ssl == 0).
+   rtc_ssl_root = ""
+
++  # Used to specify an external OpenSSL libs.
++  rtc_ssl_libs = []
++
+   # Enable when an external authentication mechanism is used for performing
+   # packet authentication for RTP packets instead of libsrtp.
+   rtc_enable_external_auth = build_with_chromium
+@@ -156,7 +176,7 @@
+   # Enabling H264 when building with MSVC is currently not supported, see
+   # bugs.webrtc.org/9213#c13 for more info.
+   rtc_use_h264 =
+-      proprietary_codecs && !is_android && !is_ios && !(is_win && !is_clang)
++      proprietary_codecs && !is_android && !is_ios && !(is_win && !is_clang && rtc_build_ffmpeg)
+
+   # Enable this flag to make webrtc::Mutex be implemented by absl::Mutex.
+   rtc_use_absl_mutex = false
+@@ -689,7 +709,7 @@
+ # For the same reason, testonly targets will always be expanded to
+ # source_set in order to be sure that tests are present in the test binary.
+ template("rtc_library") {
+-  if (is_component_build || (defined(invoker.testonly) && invoker.testonly)) {
++  if (is_component_build) {
+     target_type = "source_set"
+   } else {
+     target_type = "static_library"
+
+diff --git a/src/third_party/libsrtp/BUILD.gn b/src/third_party/libsrtp/BUILD.gn
+index 4219c43..b7b4ff3 109933
+--- a/src/third_party/libsrtp/BUILD.gn
++++ b/src/third_party/libsrtp/BUILD.gn
+@@ -3,6 +3,7 @@
+ # found in the LICENSE file.
+
+ import("//testing/test.gni")
++import("//webrtc.gni")
+
+ declare_args() {
+   # Tests may not be appropriate for some build environments, e.g. Windows.
+@@ -133,9 +134,11 @@
+     # "crypto/cipher/aes_icm_nss.c",
+   ]
+
+-  public_deps = [
+-    "//third_party/boringssl:boringssl",
+-  ]
++  if (rtc_build_ssl) {
++    public_deps += [ "//third_party/boringssl" ]
++  } else {
++    configs += [ "//rtc_base:external_ssl_library" ]
++  }
+ }
+
+ if (build_libsrtp_tests) {
+
+ diff --git a/src/third_party/usrsctp/BUILD.gn b/src/third_party/usrsctp/BUILD.gn
+ index 4219c43..b7b4ff0 109388
+ --- a/src/third_party/usrsctp/BUILD.gn
+ +++ b/src/third_party/usrsctp/BUILD.gn
+ @@ -3,6 +3,7 @@
+  # found in the LICENSE file.
+
+  import("//build/toolchain/toolchain.gni")
+ +import("//webrtc.gni")
+
+  config("usrsctp_config") {
+    include_dirs = [
+ @@ -149,5 +150,9 @@
+    if (is_fuchsia) {
+      defines += [ "__Userspace_os_Fuchsia" ]
+    }
+ -  deps = [ "//third_party/boringssl" ]
+ +  if (rtc_build_ssl) {
+ +    deps += [ "//third_party/boringssl" ]
+ +  } else {
+ +    configs += [ "//rtc_base:external_ssl_library" ]
+ +  }
+  }
+
+diff --git a/src/test/testsupport/jpeg_frame_writer.cc b/src/test/testsupport/jpeg_frame_writer.cc
+index 8bf1ee4..6817ee5 100644
+--- a/src/test/testsupport/jpeg_frame_writer.cc
++++ b/src/test/testsupport/jpeg_frame_writer.cc
+@@ -65,7 +65,7 @@ bool JpegFrameWriter::WriteFrame(const VideoFrame& input_frame, int quality) {
+   cinfo.image_width = input_frame.width();
+   cinfo.image_height = input_frame.height();
+   cinfo.input_components = kColorPlanes;
+-  cinfo.in_color_space = JCS_EXT_BGR;
++  cinfo.in_color_space = JCS_RGB; // JCS_EXT_BGR; <- this only in _turbo
+   jpeg_set_defaults(&cinfo);
+   jpeg_set_quality(&cinfo, quality, TRUE);
+
+diff --git a/src/third_party/BUILD.gn b/src/third_party/BUILD.gn
+index a62632e2c3f..ea2a9325a9c 100644
+--- a/src/third_party/BUILD.gn
++++ b/src/third_party/BUILD.gn
+@@ -11,6 +11,9 @@ assert(!is_ios, "This is not used on iOS, don't drag it in unintentionally")
+ config("system_libjpeg_config") {
+   libs = [ "jpeg" ]
+   defines = [ "USE_SYSTEM_LIBJPEG" ]
++  if (system_libjpeg_root != "") {
++    include_dirs = [ system_libjpeg_root, system_libjpeg_root + "/src" ]
++  }
+ }
+
+ config("libjpeg_turbo_config") {
+
+ diff --git a/src/third_party/libjpeg.gni b/src/third_party/libjpeg.gni
+ index 049348b79bd..039385c9739 100644
+ --- a/src/third_party/libjpeg.gni
+ +++ b/src/third_party/libjpeg.gni
+ @@ -6,6 +6,9 @@ declare_args() {
+    # Uses system libjpeg. If true, overrides use_libjpeg_turbo.
+    use_system_libjpeg = false
+
+ +  # Used to specify an external libjpeg root path
+ +  system_libjpeg_root = ""
+ +
+    # Uses libjpeg_turbo as the jpeg implementation. Has no effect if
+    # use_system_libjpeg is set.
+    use_libjpeg_turbo = true
+
+diff --git a/src/build/config/c++/c++.gni b/src/build/config/c++/c++.gni
+index 5ced459..db1b27c 100644
+--- a/src/build/config/c++/c++.gni
++++ b/src/build/config/c++/c++.gni
+@@ -11,7 +11,7 @@
+   # standard library support.
+   # Don't check in changes that set this to false for more platforms; doing so
+   # is not supported.
+-  use_custom_libcxx = is_fuchsia || is_android || is_mac ||
++  use_custom_libcxx = is_fuchsia || is_android || (is_mac && !use_xcode_clang) ||
+                       (is_ios && !use_xcode_clang) || (is_win && is_clang) ||
+                       ((is_linux || is_chromeos) &&
+                        (!is_chromeos_ash ||
+diff --git a/src/build/config/compiler/BUILD.gn b/src/build/config/compiler/BUILD.gn
+index 3d5e4de..1ebe692 100644
+--- a/src/build/config/compiler/BUILD.gn
++++ b/src/build/config/compiler/BUILD.gn
+@@ -535,7 +535,7 @@ config("compiler") {
+       # Override Chromium's default for projects that wish to stay on C++11.
+       cflags_cc += [ "-std=${standard_prefix}++11" ]
+     } else {
+-      cflags_cc += [ "-std=${standard_prefix}++14" ]
++      cflags_cc += [ "-std=${standard_prefix}++17" ]
+     }
+   } else if (!is_win && !is_nacl) {
+     if (target_os == "android") {
+@@ -1379,6 +1379,8 @@ config("default_warnings") {
+
+       "/wd4715",  # 'function' : not all control paths return a value'
+                   # MSVC does not analyze switch (enum) for completeness.
++
++      "/wd4018",  # signed/unsigned mismatch in h265 codec.
+     ]
+
+     cflags_cc += [
+@@ -1480,6 +1482,7 @@ config("default_warnings") {
+       cflags += [
+         # TODO(thakis): https://crbug.com/604888
+         "-Wno-undefined-var-template",
++        "-Wno-deprecated-declarations", # 'OSAtomicCompareAndSwap32Barrier' is deprecated: first deprecated in macOS 10.12
+       ]
+
+       if (is_win) {
+@@ -1488,7 +1491,7 @@ config("default_warnings") {
+         cflags += [ "-Wno-nonportable-include-path" ]
+       }
+
+-      if (current_toolchain == host_toolchain || !use_xcode_clang) {
++      if (current_toolchain == host_toolchain && !use_xcode_clang) {
+         # Flags NaCl (Clang 3.7) and Xcode 9.2 (Clang clang-900.0.39.2) do not
+         # recognize.
+         cflags += [
+@@ -1528,6 +1531,25 @@ config("default_warnings") {
+         ]
+       }
+     }
++  } else if (!is_win) {
++    cflags += [
++      "-Wno-attributes",
++      "-Wno-address",
++      "-Wno-nonnull-compare",
++      "-Wno-return-type",
++      "-Wno-dangling-else",
++      "-Wno-sequence-point",
++      "-Wno-sign-compare",
++      "-Wno-unused-but-set-variable",
++      "-Wno-int-in-bool-context",
++      "-Wno-unused-function",
++      "-Wno-parentheses",
++    ]
++    cflags_cc += [
++      "-Wno-subobject-linkage",
++      "-Wno-register",
++      "-Wno-array-bounds", # array subscript 18446744073709551615 is above array bounds of ‘const webrtc::SpatialLayer [5]’ `codec.spatialLayers[num_active_layers - 1].minBitrate);`
++    ]
+   }
+ }
+
+@@ -1660,7 +1682,7 @@ config("no_chromium_code") {
+       # suppressing them individually, we just blanket suppress them here.
+       "-Wno-unused-variable",
+     ]
+-    if (!is_nacl && (current_toolchain == host_toolchain || !use_xcode_clang)) {
++    if (!is_nacl && (current_toolchain == host_toolchain && !use_xcode_clang)) {
+       cflags += [
+         # TODO(https://crbug.com/1031169): Clean up and enable.
+         "-Wno-misleading-indentation",
+diff --git a/src/build/config/gcc/BUILD.gn b/src/build/config/gcc/BUILD.gn
+index 747245f..6e35afb 100644
+--- a/src/build/config/gcc/BUILD.gn
++++ b/src/build/config/gcc/BUILD.gn
+@@ -91,7 +91,8 @@ if (is_component_build && !is_android) {
+ # Settings for executables.
+ config("executable_config") {
+   configs = executable_and_shared_library_configs_
+-  ldflags = [ "-pie" ]
++  # ldflags = [ "-pie" ]
++  ldflags = []
+   if (is_android) {
+     ldflags += [
+       "-Bdynamic",
+diff --git a/src/build/config/linux/gtk/gtk.gni b/src/build/config/linux/gtk/gtk.gni
+index 0a3f35d..b23571a 100644
+--- a/src/build/config/linux/gtk/gtk.gni
++++ b/src/build/config/linux/gtk/gtk.gni
+@@ -12,4 +12,4 @@ declare_args() {
+   gtk_version = 3
+ }
+
+-assert(gtk_version >= 3 && gtk_version <= 4)
++assert(gtk_version >= 2 && gtk_version <= 4)
+diff --git a/src/build/toolchain/mac/BUILD.gn b/src/build/toolchain/mac/BUILD.gn
+index 08b17ff..7661885 100644
+--- a/src/build/toolchain/mac/BUILD.gn
++++ b/src/build/toolchain/mac/BUILD.gn
+@@ -86,7 +86,7 @@ template("mac_toolchain") {
+
+     # Supports building with the version of clang shipped with Xcode when
+     # targeting iOS by not respecting clang_base_path.
+-    if (toolchain_args.current_os == "ios" && use_xcode_clang) {
++    if (use_xcode_clang) {
+       prefix = ""
+     } else {
+       prefix = rebase_path("$clang_base_path/bin/", root_build_dir)
+diff --git a/src/build/toolchain/toolchain.gni b/src/build/toolchain/toolchain.gni
+index 552ceb6..71f2f64 100644
+--- a/src/build/toolchain/toolchain.gni
++++ b/src/build/toolchain/toolchain.gni
+@@ -45,8 +45,8 @@ declare_args() {
+ # Check target_os here instead of is_ios as this file is loaded for secondary
+ # toolchain (host toolchain in particular) but the argument is the same for
+ # all toolchains.
+-assert(!use_xcode_clang || target_os == "ios",
+-       "Using Xcode's clang is only supported in iOS builds")
++# assert(!use_xcode_clang || target_os == "ios",
++#        "Using Xcode's clang is only supported in iOS builds")
+
+ # Extension for shared library files (including leading dot).
+ if (is_mac || is_ios) {

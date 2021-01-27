@@ -52,7 +52,7 @@ supported platforms and architectures.
     <td align="center">✔</td>
     <td align="center">-</td>
     <td align="center">✔</td>
-    <td align="center">✔</td>
+    <td align="center">-</td>
   </tr>
   <tr>
     <th align="center">Android</th>

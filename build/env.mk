@@ -14,6 +14,7 @@ PATCH_DIR ?= $(BASE_DIR)/patch
 SCRIPTS_DIR ?= $(BASE_DIR)/scripts
 CONFIG_DIR ?= $(BASE_DIR)/config
 PACKAGE_DIR ?= $(BASE_DIR)/package
+EXT_LIB_DIR := $(realpath ../../..)
 
 export PATH := $(DEPOT_TOOLS_DIR):$(PATH)
 export TAR_OPTIONS := --no-same-owner
