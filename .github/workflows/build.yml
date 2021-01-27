@@ -8,35 +8,12 @@ on:
   pull_request:
 
 jobs:
-  build-linux:
-    strategy:
-      fail-fast: false
-      matrix:
-        name:
-          - linux-arm
-          - linux-arm64
-          - linux-x64
-          - android
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v1
-      - name: Disk Cleanup
-        run: ./disk_cleanup.sh
-      - name: Build
-        run: make -C docker ${{ matrix.name }}
-      - name: Upload artifact
-        uses: actions/upload-artifact@v1
-        with:
-          name: libwebrtc-${{ matrix.name }}.tar.xz
-          path: package/libwebrtc-${{ matrix.name }}.tar.xz
-
   build-macos:
     strategy:
       fail-fast: false
       matrix:
         name:
-          - macos-arm64
-          - macos-x64
+          - macos-x86_64
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v1
@@ -67,26 +44,12 @@ jobs:
           name: libwebrtc-win-x86.7z
           path: package/libwebrtc-win-x86.7z
 
-  build-ios:
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v1
-      - name: Build
-        run: make -C build USE_CCACHE=0 ios
-      - name: Upload artifact
-        uses: actions/upload-artifact@v1
-        with:
-          name: libwebrtc-ios.zip
-          path: package/libwebrtc-ios.zip
-
   setup-release:
     name: Setup release
     if: contains(github.ref, 'tags/')
     needs:
-      - build-linux
       - build-macos
       - build-windows
-      - build-ios
     runs-on: ubuntu-latest
     steps:
       - name: Create Release
@@ -116,13 +79,9 @@ jobs:
       fail-fast: false
       matrix:
         name:
-          - linux-arm
-          - linux-arm64
-          - linux-x64
           - macos-arm64
-          - macos-x64
+          - macos-x86_64
           - android
-          - ios
           - win-x64
           - win-x86
         include:
